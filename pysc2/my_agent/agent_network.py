@@ -37,7 +37,6 @@ class ProbeNetwork(object):
         self.action_pos_label = tf.placeholder(dtype=tf.float32, shape=[None, 2], name="Action_Position_label")
 
         # define network structure
-        ##
         self.encode_data = self._encoder_basic(self.map_data)
         self.decode_data = self._decoder_basic(self.encode_data)
 
