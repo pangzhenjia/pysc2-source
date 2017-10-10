@@ -1,0 +1,7 @@
+*.pyc
+*_pb2.py
+data/
+.idea/
+pysc2/my_agent/logs/
+pysc2/my_agent/model/
+pysc2/my_agent/map_sample.npy
