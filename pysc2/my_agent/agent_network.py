@@ -62,7 +62,6 @@ class ProbeNetwork(object):
             self.encoder_loss = tf.reduce_mean(tf.squared_difference(self.map_data, self.decode_data))
             self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr_ph).minimize(self.encoder_loss,
                                                                                           var_list=self.encoder_var_list)
-        self.encoder_var_list.extend(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder_loss"))
 
         self.action_type_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Classify")
         with tf.name_scope("Action_Type_loss"):
@@ -238,7 +237,7 @@ class ProbeNetwork(object):
                 #     print("Model have been save!")
 
     def print_data(self):
-        self.saver.restore(self.sess, self.model_path)
+        self.encoder_saver.restore(self.sess, "model/test")
 
         map_data = np.load("map_sample.npy")
 
@@ -255,6 +254,9 @@ class ProbeNetwork(object):
                 self.map_data: batch_map_data[:, :3, :, :],
                 self.encoder_lr_ph: self.encoder_lr
             }
+
+            encode_data = self.decode_data.eval(feed_dict, session=self.sess)
+            np.save("encoder.npy", encode_data)
 
             decode_data = self.decode_data.eval(feed_dict, session=self.sess)
 
