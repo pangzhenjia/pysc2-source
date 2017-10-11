@@ -1,0 +1,49 @@
+save_data:
+
+	1. minimap
+	2. screen
+	3. single_select   	    ( unit_info)     7
+	4. player		        ( top_info)     11
+	5. score_cumulative  	(reward)       	13
+
+save_orders:
+
+	1. move (x,y)                	16
+	2. build_pylon 	      		    881
+	3. build_forge	      		    884
+	4. build_cannon	      		    887
+
+	[game_loop, type_num, x, y]
+
+
+minimap:
+
+	height_map               	√	0
+	visibility_map	    		√	1
+	creep ( for zerg)
+	camera
+	player_id
+	player_relative			    √	5
+	selected			        ×	6
+
+
+screen:
+
+	height_map		            √
+	visibility_map
+	creep
+	power(pylon)
+	player_id
+	player_relative
+	unit_type
+	selected
+	hit_points
+	unit_energy
+	unit_shields
+	unit_density
+	unit_density_aa
+
+
+
+
+top:

@@ -7,17 +7,15 @@ class ProbeNetwork(object):
 
     def __init__(self):
 
-        self.model_path = "model/"
-
         self.encoder_version = "basic"
-        self.encoder_model_path = self.model_path + "encoder_%s/probe" % self.encoder_version
+        self.model_path = "model/encoder_%s/probe" % self.encoder_version
 
         self.map_width = 64
         self.map_num = 3
         self.action_num = 4
 
-        self.encoder_lr = 0.0001
-        self.action_type_lr = 0.0001
+        self.encoder_lr = 0.000001
+        self.action_type_lr = 0.001
         self.action_pos_lr = 0.0001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
@@ -27,7 +25,9 @@ class ProbeNetwork(object):
             self._create_graph()
 
             self.sess = tf.Session(graph=self.graph)
-            # self.saver = tf.train.Saver()
+            self.saver = tf.train.Saver()
+
+            self.encoder_saver = tf.train.Saver(var_list=self.encoder_var_list)
 
             tf.summary.FileWriter("logs/", self.sess.graph)
             self.sess.run(tf.global_variables_initializer())
@@ -62,7 +62,7 @@ class ProbeNetwork(object):
             self.encoder_loss = tf.reduce_mean(tf.squared_difference(self.map_data, self.decode_data))
             self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr_ph).minimize(self.encoder_loss,
                                                                                           var_list=self.encoder_var_list)
-        self.encoder_saver = tf.train.Saver(self.encoder_var_list)
+        self.encoder_var_list.extend(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder_loss"))
 
         self.action_type_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Classify")
         with tf.name_scope("Action_Type_loss"):
@@ -99,7 +99,7 @@ class ProbeNetwork(object):
         with tf.name_scope("Decoder_basic"):
             d1 = layer.dense_layer(encode_data, 2048, "DenseLayer1")
             d2 = layer.dense_layer(d1, 4096, "DenseLayer2")
-            d3 = layer.dense_layer(d2, self.flatten_map_size, "DenseLayer3", func=None)
+            d3 = layer.dense_layer(d2, self.flatten_map_size, "DenseLayer3")
 
         data = tf.reshape(d3, shape=[-1, self.map_num, self.map_width, self.map_width])
         return data
@@ -107,8 +107,8 @@ class ProbeNetwork(object):
     def _action_type_net(self, encode_data):
 
         with tf.name_scope("Action_Classify"):
-            # norm_data = tf.contrib.layers.batch_norm(encode_data, zero_debias_moving_mean=True,
-            #                                          scope="Action_Classify")
+            # encode_data = tf.contrib.layers.batch_norm(encode_data, zero_debias_moving_mean=True,
+            #                                            scope="Action_Classify")
             d1 = layer.dense_layer(encode_data, 512, "DenseLayer1")
             d2 = layer.dense_layer(d1, 256, "DenseLayer2")
             d3 = layer.dense_layer(d2, 128, "DenseLayer3")
@@ -127,8 +127,9 @@ class ProbeNetwork(object):
 
     def train(self):
 
-        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        # self.saver.restore(self.sess, self.model_path)
 
+        self.encoder_saver.restore(self.sess, "model/test")
         self.train_encoder()
 
         self.train_action_type()
@@ -161,7 +162,7 @@ class ProbeNetwork(object):
                 i += 1
 
                 if i % 50 == 0:
-                    self.encoder_saver.save(self.sess, self.encoder_model_path)
+                    self.saver.save(self.sess, self.model_path)
                     print("Model have been save!")
 
     def train_action_type(self):
@@ -178,10 +179,11 @@ class ProbeNetwork(object):
             i = 0
             while (i+1) * batch_size <= sample_num:
                 batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
+                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
                 batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
 
                 feed_dict = {
-                    self.map_data: batch_map_data.reshape(batch_size, self.map_num, self.map_width, self.map_width),
+                    self.map_data: batch_map_data[:, :3, :, :],
                     self.action_type_label: batch_action_type,
                     self.action_type_lr_ph: self.action_type_lr
                 }
@@ -234,6 +236,38 @@ class ProbeNetwork(object):
                 # if i % 50 == 0:
                 #     self.saver.save(self.sess, self.model_path)
                 #     print("Model have been save!")
+
+    def print_data(self):
+        self.saver.restore(self.sess, self.model_path)
+
+        map_data = np.load("map_sample.npy")
+
+        batch_size = 1
+        iter_num = 1
+
+        for iter_index in range(iter_num):
+            i = 0
+
+            batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
+            batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+
+            feed_dict = {
+                self.map_data: batch_map_data[:, :3, :, :],
+                self.encoder_lr_ph: self.encoder_lr
+            }
+
+            decode_data = self.decode_data.eval(feed_dict, session=self.sess)
+
+            # decode data seems pretty good!
+            print(1)
+
+    def test_save_encoder(self):
+        self.saver.restore(self.sess, self.model_path)
+
+        self.encoder_saver.save(self.sess, "model/test")
+
+
+
 
 
 
