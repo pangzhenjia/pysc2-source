@@ -6,17 +6,22 @@ import pysc2.my_agent.layer as layer
 class ProbeNetwork(object):
 
     def __init__(self):
+
+        self.model_path = "model/"
+
+        self.encoder_version = "basic"
+        self.encoder_model_path = self.model_path + "encoder_%s/probe" % self.encoder_version
+
         self.map_width = 64
-        self.map_num = 4
+        self.map_num = 3
         self.action_num = 4
 
-        self.encoder_lr = 0.00001
+        self.encoder_lr = 0.0001
         self.action_type_lr = 0.0001
         self.action_pos_lr = 0.0001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
 
-        self.model_path = "model/probe_"
         self.graph = tf.Graph()
         with self.graph.as_default() as g:
             self._create_graph()
@@ -29,6 +34,11 @@ class ProbeNetwork(object):
 
     def _create_graph(self):
 
+        # define learning rate
+        self.encoder_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="encoder_lr")
+        self.action_type_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="action_type_lr")
+        self.action_pos_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="action_pos_lr")
+
         # define input
         self.map_data = tf.placeholder(dtype=tf.float32, shape=[None, self.map_num, self.map_width, self.map_width],
                                        name="input_map_data")
@@ -37,8 +47,8 @@ class ProbeNetwork(object):
         self.action_pos_label = tf.placeholder(dtype=tf.float32, shape=[None, 2], name="Action_Position_label")
 
         # define network structure
-        self.encode_data = self._encoder_basic(self.map_data)
-        self.decode_data = self._decoder_basic(self.encode_data)
+        self.encode_data = eval("self._encoder_%s(self.map_data)" % self.encoder_version)
+        self.decode_data = eval("self._decoder_%s(self.encode_data)" % self.encoder_version)
 
         self.action_type_predict = self._action_type_net(self.encode_data)
 
@@ -50,22 +60,22 @@ class ProbeNetwork(object):
         self.encoder_var_list.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Decoder"))
         with tf.name_scope("Encoder_loss"):
             self.encoder_loss = tf.reduce_mean(tf.squared_difference(self.map_data, self.decode_data))
-            self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr).minimize(self.encoder_loss,
-                                                                                       var_list=self.encoder_var_list)
+            self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr_ph).minimize(self.encoder_loss,
+                                                                                          var_list=self.encoder_var_list)
         self.encoder_saver = tf.train.Saver(self.encoder_var_list)
 
         self.action_type_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Classify")
         with tf.name_scope("Action_Type_loss"):
             self.action_type_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                 logits=self.action_type_predict, labels=self.action_type_label))
-            self.action_type_train_step = tf.train.AdamOptimizer(self.action_type_lr).minimize(
+            self.action_type_train_step = tf.train.AdamOptimizer(self.action_type_lr_ph).minimize(
                 self.action_type_loss, var_list=self.action_type_var_list)
 
         self.action_pos_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Position_Regress")
         with tf.name_scope("Action_Pos_loss"):
             self.action_pos_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                 logits=self.action_pos_predict, labels=self.action_pos_label))
-            self.action_pos_train_step = tf.train.AdamOptimizer(self.action_pos_lr).minimize(
+            self.action_pos_train_step = tf.train.AdamOptimizer(self.action_pos_lr_ph).minimize(
                 self.action_pos_loss, var_list=self.action_pos_var_list)
 
     def _encoder_basic(self, data):
@@ -117,7 +127,8 @@ class ProbeNetwork(object):
 
     def train(self):
 
-        self.encoder_saver.restore(self.sess, self.model_path + "encoder")
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+
         self.train_encoder()
 
         self.train_action_type()
@@ -136,9 +147,11 @@ class ProbeNetwork(object):
             i = 0
             while (i+1) * batch_size <= map_num:
                 batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
+                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
 
                 feed_dict = {
-                    self.map_data: batch_map_data.reshape(batch_size, self.map_num, self.map_width, self.map_width)
+                    self.map_data: batch_map_data[:, :3, :, :],
+                    self.encoder_lr_ph: self.encoder_lr
                 }
                 self.encoder_train_step.run(feed_dict, session=self.sess)
 
@@ -148,7 +161,7 @@ class ProbeNetwork(object):
                 i += 1
 
                 if i % 50 == 0:
-                    self.encoder_saver.save(self.sess, self.model_path + "encoder")
+                    self.encoder_saver.save(self.sess, self.encoder_model_path)
                     print("Model have been save!")
 
     def train_action_type(self):
@@ -169,7 +182,8 @@ class ProbeNetwork(object):
 
                 feed_dict = {
                     self.map_data: batch_map_data.reshape(batch_size, self.map_num, self.map_width, self.map_width),
-                    self.action_type_label: batch_action_type
+                    self.action_type_label: batch_action_type,
+                    self.action_type_lr_ph: self.action_type_lr
                 }
 
                 self.action_type_train_step.run(feed_dict, session=self.sess)
@@ -206,7 +220,8 @@ class ProbeNetwork(object):
                 feed_dict = {
                     self.map_data: batch_map_data.reshape(batch_size, self.map_num, self.map_width, self.map_width),
                     self.action_type_label: batch_action_type,
-                    self.action_pos_label: batch_action_pos
+                    self.action_pos_label: batch_action_pos,
+                    self.action_pos_lr_ph: self.action_pos_lr
                 }
 
                 self.action_pos_train_step.run(feed_dict, session=self.sess)

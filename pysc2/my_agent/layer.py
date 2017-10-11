@@ -33,7 +33,7 @@ def conv2d_layer(data, filter_size, out_dim, name, ret_vars=False, strides=[1, 1
         w = tf.Variable(w_init, name="kernel_weights", dtype=tf.float32)
         b = tf.Variable(b_init, name="bias", dtype=tf.float32)
 
-        output = tf.nn.conv2d(data, w, strides==strides, padding='SAME', data_format="NCHW") + b
+        output = tf.nn.conv2d(data, w, strides=strides, padding='SAME', data_format="NCHW") + b
         if func is not None:
             output = func(output)
 
