@@ -8,14 +8,17 @@ class ProbeNetwork(object):
     def __init__(self):
 
         self.encoder_version = "basic"
-        self.model_path = "model/encoder_%s/probe" % self.encoder_version
+        self.encoder_model_path = "model/encoder_%s/probe" % self.encoder_version
+
+        self.action_type_trainable = False
+        self.action_type_model_path = "model/action_type/probe"
 
         self.map_width = 64
         self.map_num = 3
         self.action_num = 4
 
-        self.encoder_lr = 0.000001
-        self.action_type_lr = 0.001
+        self.encoder_lr = 0.00001
+        self.action_type_lr = 0.0001
         self.action_pos_lr = 0.0001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
@@ -25,12 +28,16 @@ class ProbeNetwork(object):
             self._create_graph()
 
             self.sess = tf.Session(graph=self.graph)
-            self.saver = tf.train.Saver()
 
-            self.encoder_saver = tf.train.Saver(var_list=self.encoder_var_list)
+            self.encoder_var_list_save = list(set(self.encoder_var_list_train +
+                                                  tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder")))
+            self.encoder_saver = tf.train.Saver(var_list=self.encoder_var_list_save)
 
-            tf.summary.FileWriter("logs/", self.sess.graph)
-            self.sess.run(tf.global_variables_initializer())
+            self.action_type_var_list_save = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Action_Type")
+            self.action_type_saver = tf.train.Saver(var_list=self.action_type_var_list_save)
+
+            # tf.summary.FileWriter("logs/", self.sess.graph)
+            # self.sess.run(tf.global_variables_initializer())
 
     def _create_graph(self):
 
@@ -56,19 +63,22 @@ class ProbeNetwork(object):
         self.action_pos_predict = self._action_pos_net(self.encode_data_action)
 
         # define network loss to train
-        self.encoder_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Encoder")
-        self.encoder_var_list.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Decoder"))
+        self.encoder_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Encoder")
+        self.encoder_var_list_train.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Decoder"))
         with tf.name_scope("Encoder_loss"):
             self.encoder_loss = tf.reduce_mean(tf.squared_difference(self.map_data, self.decode_data))
-            self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr_ph).minimize(self.encoder_loss,
-                                                                                          var_list=self.encoder_var_list)
+            self.encoder_train_step = tf.train.AdamOptimizer(self.encoder_lr_ph).minimize(
+                self.encoder_loss, var_list=self.encoder_var_list_train)
 
-        self.action_type_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Classify")
+        self.action_type_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Type")
         with tf.name_scope("Action_Type_loss"):
             self.action_type_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                 logits=self.action_type_predict, labels=self.action_type_label))
-            self.action_type_train_step = tf.train.AdamOptimizer(self.action_type_lr_ph).minimize(
-                self.action_type_loss, var_list=self.action_type_var_list)
+            # for batch_norm training
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                self.action_type_train_step = tf.train.AdamOptimizer(self.action_type_lr_ph).minimize(
+                    self.action_type_loss, var_list=self.action_type_var_list_train)
 
         self.action_pos_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Position_Regress")
         with tf.name_scope("Action_Pos_loss"):
@@ -105,12 +115,17 @@ class ProbeNetwork(object):
 
     def _action_type_net(self, encode_data):
 
-        with tf.name_scope("Action_Classify"):
-            # encode_data = tf.contrib.layers.batch_norm(encode_data, zero_debias_moving_mean=True,
-            #                                            scope="Action_Classify")
-            d1 = layer.dense_layer(encode_data, 512, "DenseLayer1")
-            d2 = layer.dense_layer(d1, 256, "DenseLayer2")
-            d3 = layer.dense_layer(d2, 128, "DenseLayer3")
+        name = "Action_Type"
+        with tf.name_scope(name):
+            norm_data = layer.batch_norm(encode_data, self.action_type_trainable, "Norm1")
+            d1 = layer.dense_layer(norm_data, 512, "DenseLayer1")
+
+            d1_norm = layer.batch_norm(d1, self.action_type_trainable, "Norm2")
+            d2 = layer.dense_layer(d1_norm, 256, "DenseLayer2")
+
+            d2_norm = layer.batch_norm(d2, self.action_type_trainable, "Norm3")
+            d3 = layer.dense_layer(d2_norm, 128, "DenseLayer3")
+
             d4 = layer.dense_layer(d3, self.action_num, "DenseLayer4", func=tf.nn.softmax)
 
         return d4
@@ -128,9 +143,10 @@ class ProbeNetwork(object):
 
         # self.saver.restore(self.sess, self.model_path)
 
-        self.encoder_saver.restore(self.sess, "model/test")
-        self.train_encoder()
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        # self.train_encoder()
 
+        self.action_type_saver.restore(self.sess, self.action_type_model_path)
         self.train_action_type()
 
         self.train_action_pos()
@@ -161,7 +177,7 @@ class ProbeNetwork(object):
                 i += 1
 
                 if i % 50 == 0:
-                    self.saver.save(self.sess, self.model_path)
+                    self.encoder_saver.save(self.sess, self.encoder_model_path)
                     print("Model have been save!")
 
     def train_action_type(self):
@@ -189,16 +205,17 @@ class ProbeNetwork(object):
 
                 self.action_type_train_step.run(feed_dict, session=self.sess)
 
-                print("Action_Type: epoch: %d/%d, batch_step: %d, loss: " % (iter_index, iter_num, i),
+                print("Action_Type: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, i),
                       self.action_type_loss.eval(feed_dict, session=self.sess),
                       "predict: ", self.action_type_predict.eval(feed_dict, session=self.sess)[-1, :],
                       "label: ", batch_action_type[-1, :])
 
                 i += 1
 
-                # if i % 50 == 0:
-                #     self.saver.save(self.sess, self.model_path)
-                #     print("Model have been save!")
+                if self.action_type_trainable:
+                    if i % 50 == 0:
+                        self.action_type_saver.save(self.sess, self.action_type_model_path)
+                        print("Model have been save!")
 
     def train_action_pos(self):
         map_data = np.load("map_sample.npy")
@@ -263,10 +280,6 @@ class ProbeNetwork(object):
             # decode data seems pretty good!
             print(1)
 
-    def test_save_encoder(self):
-        self.saver.restore(self.sess, self.model_path)
-
-        self.encoder_saver.save(self.sess, "model/test")
 
 
 

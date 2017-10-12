@@ -11,9 +11,9 @@ if __name__ == "__main__":
     #     c = tf.Variable(333, 'c')
     #
     # with tf.name_scope('some_scope2'):
-    #     d = tf.Variable(4, 'd')
-    #     e = tf.Variable(5, 'e')
-    #     f = tf.Variable(6, 'f')
+    #     d = tf.Variable(444, 'd')
+    #     e = tf.Variable(555, 'e')
+    #     f = tf.Variable(666, 'f')
     #
     # h = tf.Variable(8, 'h')
     #
@@ -25,10 +25,9 @@ if __name__ == "__main__":
     # saver.restore(sess, "test_model/test")
     #
     # for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='some_scope'):
-    #     print(i.eval(session=sess))
+    #     # print(i.eval(session=sess))
+    #     print(i)
 
     # train model
     probe_net = Network.ProbeNetwork()
-    # probe_net.train()
-    # probe_net.test_save_encoder()
-    probe_net.print_data()
+    probe_net.train()
