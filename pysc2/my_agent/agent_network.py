@@ -13,12 +13,14 @@ class ProbeNetwork(object):
         self.action_type_trainable = False
         self.action_type_model_path = "model/action_type/probe"
 
+        self.action_pos_model_path = "model/action_pos/probe"
+
         self.map_width = 64
         self.map_num = 3
         self.action_num = 4
 
         self.encoder_lr = 0.00001
-        self.action_type_lr = 0.0001
+        self.action_type_lr = 0.00001
         self.action_pos_lr = 0.0001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
@@ -36,8 +38,12 @@ class ProbeNetwork(object):
             self.action_type_var_list_save = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Action_Type")
             self.action_type_saver = tf.train.Saver(var_list=self.action_type_var_list_save)
 
+            self.action_pos_var_list_save = list(set(self.action_pos_var_list_train +
+                                                     tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Action_Pos")))
+            self.action_pos_saver = tf.train.Saver(var_list=self.action_pos_var_list_save)
+
             # tf.summary.FileWriter("logs/", self.sess.graph)
-            # self.sess.run(tf.global_variables_initializer())
+            self.sess.run(tf.global_variables_initializer())
 
     def _create_graph(self):
 
@@ -50,8 +56,11 @@ class ProbeNetwork(object):
         self.map_data = tf.placeholder(dtype=tf.float32, shape=[None, self.map_num, self.map_width, self.map_width],
                                        name="input_map_data")
 
-        self.action_type_label = tf.placeholder(dtype=tf.float32, shape=[None, self.action_num], name="Action_Type_label")
-        self.action_pos_label = tf.placeholder(dtype=tf.float32, shape=[None, 2], name="Action_Position_label")
+        self.action_type_label = tf.placeholder(dtype=tf.float32, shape=[None, self.action_num],
+                                                name="Action_Type_label")
+
+        self.action_pos_label = tf.placeholder(dtype=tf.float32, shape=[None, self.map_width*self.map_width],
+                                               name="Action_Position_label")
 
         # define network structure
         self.encode_data = eval("self._encoder_%s(self.map_data)" % self.encoder_version)
@@ -80,12 +89,20 @@ class ProbeNetwork(object):
                 self.action_type_train_step = tf.train.AdamOptimizer(self.action_type_lr_ph).minimize(
                     self.action_type_loss, var_list=self.action_type_var_list_train)
 
-        self.action_pos_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Position_Regress")
+            self.action_type_cor_pre = tf.equal(tf.argmax(self.action_type_label, 1),
+                                                tf.argmax(self.action_type_predict, 1))
+            self.action_type_acu = tf.reduce_mean(tf.cast(self.action_type_cor_pre, tf.float32))
+
+        self.action_pos_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Pos")
         with tf.name_scope("Action_Pos_loss"):
-            self.action_pos_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                logits=self.action_pos_predict, labels=self.action_pos_label))
+            self.action_pos_loss = tf.reduce_sum(tf.squared_difference(self.action_pos_predict, self.action_pos_label))
             self.action_pos_train_step = tf.train.AdamOptimizer(self.action_pos_lr_ph).minimize(
-                self.action_pos_loss, var_list=self.action_pos_var_list)
+                self.action_pos_loss, var_list=self.action_pos_var_list_train)
+
+            self.action_pos_label_index = tf.argmax(self.action_pos_label, 1)
+            self.action_pos_predict_index = tf.argmax(self.action_pos_predict, 1)
+            self.action_pos_cor_pre = tf.equal(self.action_pos_label_index, self.action_pos_predict_index)
+
 
     def _encoder_basic(self, data):
 
@@ -132,10 +149,10 @@ class ProbeNetwork(object):
 
     def _action_pos_net(self, encode_data):
 
-        with tf.name_scope("Position_Regress"):
+        with tf.name_scope("Action_Pos"):
             d1 = layer.dense_layer(encode_data, 2048, "DenseLayer1")
             d2 = layer.dense_layer(d1, 4096, "DenseLayer2")
-            d3 = layer.dense_layer(d2, self.map_width * self.map_width, "DenseLayer3", func=tf.nn.softmax)
+            d3 = layer.dense_layer(d2, self.map_width * self.map_width, "DenseLayer3")
 
         return d3
 
@@ -147,8 +164,9 @@ class ProbeNetwork(object):
         # self.train_encoder()
 
         self.action_type_saver.restore(self.sess, self.action_type_model_path)
-        self.train_action_type()
+        # self.train_action_type()
 
+        # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
         self.train_action_pos()
 
     def train_encoder(self):
@@ -225,18 +243,25 @@ class ProbeNetwork(object):
         action_pos_data = order_data[:, [1, 2]].astype("int")
 
         sample_num = order_data.shape[0]  # 2000
-        batch_size = 20
+        batch_size = 100
         iter_num = 5
+
+        batch_action_pos = np.zeros((batch_size, self.map_width*self.map_width))
 
         for iter_index in range(iter_num):
             i = 0
             while (i+1) * batch_size <= sample_num:
                 batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
+                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
                 batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
-                batch_action_pos = action_pos_data[i*batch_size:(i+1)*batch_size, :]
+
+                for j in range(batch_size):
+                    x = action_pos_data[i*batch_size+j, 0]
+                    y = action_pos_data[i*batch_size+j, 1]
+                    batch_action_pos[j, int(y*self.map_width + x)] = 1
 
                 feed_dict = {
-                    self.map_data: batch_map_data.reshape(batch_size, self.map_num, self.map_width, self.map_width),
+                    self.map_data: batch_map_data[:, :3, :, :],
                     self.action_type_label: batch_action_type,
                     self.action_pos_label: batch_action_pos,
                     self.action_pos_lr_ph: self.action_pos_lr
@@ -245,16 +270,19 @@ class ProbeNetwork(object):
                 self.action_pos_train_step.run(feed_dict, session=self.sess)
 
                 print("Action_Pos: epoch: %d/%d, batch_step: %d, loss: " % (iter_index, iter_num, i),
-                      self.action_pos_loss.eval(feed_dict, session=self.sess))
+                      self.action_pos_loss.eval(feed_dict, session=self.sess),
+                      # "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
+                      # "predict:", self.action_pos_predict_index.eval(feed_dict, session=self.sess)
+                      )
 
                 i += 1
 
-                # if i % 50 == 0:
-                #     self.saver.save(self.sess, self.model_path)
-                #     print("Model have been save!")
+                if i % 50 == 0:
+                    self.action_pos_saver.save(self.sess, self.action_pos_model_path)
+                    print("Model have been save!")
 
     def print_data(self):
-        self.encoder_saver.restore(self.sess, "model/test")
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
 
         map_data = np.load("map_sample.npy")
 
@@ -279,6 +307,39 @@ class ProbeNetwork(object):
 
             # decode data seems pretty good!
             print(1)
+
+    def test_action_type(self):
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        self.action_type_saver.restore(self.sess, self.action_type_model_path)
+
+        map_data = np.load("map_sample.npy")
+
+        order_data = np.load("order_sample_ap.npy")
+        action_type_data = order_data[:, 3:]
+
+        sample_num = order_data.shape[0]  # 2000
+        batch_size = 2000
+        iter_num = 1
+
+        for iter_index in range(iter_num):
+            i = 0
+            while (i+1) * batch_size <= sample_num:
+                batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
+                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+                batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
+
+                feed_dict = {
+                    self.map_data: batch_map_data[:, :3, :, :],
+                    self.action_type_label: batch_action_type,
+                    self.action_type_lr_ph: self.action_type_lr
+                }
+
+                print("Action_Type: epoch: %d/%d, batch_step: %d, acu: " % (iter_index+1, iter_num, i),
+                      self.action_type_acu.eval(feed_dict, session=self.sess))
+
+                i += 1
+
+
 
 
 

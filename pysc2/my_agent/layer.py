@@ -53,7 +53,7 @@ def batch_norm(data, is_training, name):
         )
 
         # apply moving average for mean and var when train on batch
-        ema = tf.train.ExponentialMovingAverage(decay=0.8)
+        ema = tf.train.ExponentialMovingAverage(decay=0.9)
 
         def mean_var_with_update():
             ema_apply_op = ema.apply([fc_mean, fc_var])
@@ -68,7 +68,7 @@ def batch_norm(data, is_training, name):
 
         scale = tf.Variable(tf.ones([out_size]), trainable=False, name="scale")
         shift = tf.Variable(tf.zeros([out_size]), trainable=False, name="shift")
-        epsilon = 0.001
+        epsilon = 0.0001
 
         data_norm = tf.nn.batch_normalization(data, mean, var, shift, scale, epsilon)
 
