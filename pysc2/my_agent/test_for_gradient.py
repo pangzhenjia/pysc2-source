@@ -30,4 +30,4 @@ if __name__ == "__main__":
 
     # train model
     probe_net = Network.ProbeNetwork()
-    probe_net.train()
+    probe_net.test_action_pos()
