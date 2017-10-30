@@ -70,6 +70,7 @@ class StarcraftProcess(object):
         "-dataDir", os.path.join(run_config.data_dir, ""),
         "-tempDir", os.path.join(self._tmp_dir, ""),
         "-displayMode", "1" if full_screen else "0",
+        "-dataversion", "3F2FCED08798D83B873B5543BEFA6C4B"
     ]
     if data_version:
       args += ["-dataVersion", data_version]

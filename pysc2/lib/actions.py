@@ -408,7 +408,10 @@ FUNCTIONS = Functions([
     Function.ability(52, "Build_Extractor_screen", cmd_screen, 1154),
     Function.ability(53, "Build_Factory_screen", cmd_screen, 328),
     Function.ability(54, "Build_FleetBeacon_screen", cmd_screen, 885),
-    Function.ability(55, "Build_Forge_screen", cmd_screen, 884),
+
+    # Function.ability(55, "Build_Forge_screen", cmd_screen, 884),
+    Function.ability(55, "Build_Forge_screen", cmd_minimap, 884),
+
     Function.ability(56, "Build_FusionCore_screen", cmd_screen, 333),
     Function.ability(57, "Build_Gateway_screen", cmd_screen, 883),
     Function.ability(58, "Build_GhostAcademy_screen", cmd_screen, 327),
@@ -422,8 +425,13 @@ FUNCTIONS = Functions([
     Function.ability(66, "Build_Nuke_quick", cmd_quick, 710),
     Function.ability(67, "Build_NydusNetwork_screen", cmd_screen, 1161),
     Function.ability(68, "Build_NydusWorm_screen", cmd_screen, 1768),
-    Function.ability(69, "Build_PhotonCannon_screen", cmd_screen, 887),
-    Function.ability(70, "Build_Pylon_screen", cmd_screen, 881),
+
+    # Function.ability(69, "Build_PhotonCannon_screen", cmd_screen, 887),
+    Function.ability(69, "Build_PhotonCannon_screen", cmd_minimap, 887),
+
+    # Function.ability(70, "Build_Pylon_screen", cmd_screen, 881),
+    Function.ability(70, "Build_Pylon_screen", cmd_minimap, 881),
+
     Function.ability(71, "Build_Reactor_quick", cmd_quick, 3683),
     Function.ability(72, "Build_Reactor_screen", cmd_screen, 3683),
     Function.ability(73, "Build_Reactor_Barracks_quick", cmd_quick, 422, 3683),

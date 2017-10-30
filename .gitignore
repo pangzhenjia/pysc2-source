@@ -5,4 +5,7 @@ data/
 pysc2/my_agent/logs/
 pysc2/my_agent/model/
 pysc2/my_agent/test_model/
-pysc2/my_agent/map_sample.npy
+pysc2/my_agent/*.npy
+pysc2/__pycache__/
+pysc2/my_agent/new_order.txt
+pysc2/my_agent/order.txt

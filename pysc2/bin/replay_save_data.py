@@ -50,8 +50,9 @@ flags.DEFINE_integer("max_episode_steps", 0, "Total game steps per episode.")
 flags.DEFINE_bool("disable_fog", False, "Disable fog of war.")
 flags.DEFINE_integer("observed_player", 1, "Which player to observe.")
 
-flags.DEFINE_string("replay", "Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
+flags.DEFINE_string("replay", "local/Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
 
+flags.DEFINE_bool("save_data", False, "save data or not")
 flags.DEFINE_string("save_path", "C:/Users/chensy/Desktop/pysc2 source/data/demo1/", "path to save replay data")
 
 
@@ -138,8 +139,9 @@ def main(unused_argv):
             unit_data[i, 1:] = obs_data["single_select"]
             score_data[i, 1:] = obs_data["score_cumulative"]
 
-            np.save(path + "minimap_%d.npy" % obs_data["game_loop"], obs_data["minimap"])
-            np.save(path + "screen_%d.npy" % obs_data["game_loop"], obs_data["screen"])
+            if FLAGS.save_data:
+                np.save(path + "minimap_%d.npy" % obs_data["game_loop"], obs_data["minimap"])
+                np.save(path + "screen_%d.npy" % obs_data["game_loop"], obs_data["screen"])
 
             # [game_loop, action_type, x, y]
             # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon
@@ -166,10 +168,11 @@ def main(unused_argv):
         print("Score: ", obs.observation.score.score)
         print("Result: ", obs.player_result)
 
-        np.save(path + "unit.npy", unit_data)
-        np.save(path + "top.npy", player_data)
-        np.save(path + "score.npy", score_data)
-        np.save(path + "order.npy", order_data.reshape(-1, 4))
+        if FLAGS.save_data:
+            np.save(path + "unit.npy", unit_data)
+            np.save(path + "top.npy", player_data)
+            np.save(path + "score.npy", score_data)
+            np.save(path + "order.npy", order_data.reshape(-1, 4))
 
 
 def entry_point():  # Needed so setup.py scripts work.

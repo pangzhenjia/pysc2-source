@@ -28,6 +28,7 @@ from pysc2.lib import renderer_human
 from pysc2.lib import stopwatch
 
 from s2clientprotocol import sc2api_pb2 as sc_pb
+from s2clientprotocol import common_pb2 as sc_common
 
 sw = stopwatch.sw
 
@@ -39,10 +40,10 @@ _possible_results = {
 }
 
 races = {
-    "R": sc_pb.Random,
-    "P": sc_pb.Protoss,
-    "T": sc_pb.Terran,
-    "Z": sc_pb.Zerg,
+    "R": sc_common.Random,
+    "P": sc_common.Protoss,
+    "T": sc_common.Terran,
+    "Z": sc_common.Zerg
 }
 
 difficulties = {
@@ -193,6 +194,9 @@ class SC2Env(environment.Base):
         self._state = environment.StepType.LAST  # Want to jump to `reset`.
         logging.info("Environment is ready.")
 
+    def get_controller(self):
+        return self._controller
+
     def observation_spec(self):
         """Look at Features for full specs."""
         return self._features.observation_spec()
@@ -224,7 +228,7 @@ class SC2Env(environment.Base):
 
         assert len(actions) == 1  # No multiplayer yet.
         action = self._features.transform_action(self._obs.observation, actions[0])
-        self._controller.act(action)
+        print(self._controller.act(action))
         self._state = environment.StepType.MID
         return self._step()
 

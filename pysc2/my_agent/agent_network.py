@@ -20,11 +20,11 @@ class ProbeNetwork(object):
 
         self.map_width = 64
         self.map_num = 3
-        self.action_num = 4
+        self.action_num = 5
 
         self.encoder_lr = 0.00001
         self.action_type_lr = 0.00001
-        self.action_pos_lr = 0.00001
+        self.action_pos_lr = 0.000001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
 
@@ -218,20 +218,25 @@ class ProbeNetwork(object):
                     print("Model have been save!")
 
     def train_action_type(self):
-        map_data = np.load("map_sample.npy")
 
-        order_data = np.load("order_sample_ap.npy")
-        action_type_data = order_data[:, 3:]
+        order_data = np.load("new_order_sample.npy")
+        action_type_data = self.change_action_type(order_data[:, 1])
 
-        sample_num = order_data.shape[0]  # 2000
+        frame_array = order_data[:, 0]
+
+        sample_num = order_data.shape[0]  # 5000
         batch_size = 20
-        iter_num = 5
+        iter_num = 20
 
+        batch_map_data = np.zeros((batch_size, 3, 64, 64))
         for iter_index in range(iter_num):
             i = 0
             while (i+1) * batch_size <= sample_num:
-                batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
-                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+
+                for j in range(batch_size):
+                    batch_map_data[j, :, :, :] = np.load("../../data/demo1/minimap_%d.npy" %
+                                                         int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
+
                 batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
 
                 feed_dict = {
@@ -244,8 +249,9 @@ class ProbeNetwork(object):
 
                 print("Action_Type: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, i),
                       self.action_type_loss.eval(feed_dict, session=self.sess),
-                      "predict: ", self.action_type_predict.eval(feed_dict, session=self.sess)[-1, :],
-                      "label: ", batch_action_type[-1, :])
+                      # "predict: ", self.action_type_predict.eval(feed_dict, session=self.sess)[-1, :],
+                      # "label: ", batch_action_type[-1, :]
+                      )
 
                 i += 1
 
@@ -255,32 +261,32 @@ class ProbeNetwork(object):
                         print("Model have been save!")
 
     def train_action_pos(self):
-        map_data = np.load("map_sample.npy")
 
-        order_data = np.load("order_sample_ap.npy")
-        action_type_data = order_data[:, 3:]
-        action_pos_data = order_data[:, [1, 2]].astype("int")
+        order_data = np.load("new_order_sample.npy")
+        action_pos_data = order_data[:, [2, 3]].astype("int")
+        frame_array = order_data[:, 0]
 
         pos_index = [x[1]*self.map_width+x[0] for x in action_pos_data]
 
-        sample_num = order_data.shape[0]  # 2000
+        sample_num = order_data.shape[0]  # 5000
         batch_size = 20
         iter_num = 20
 
+        batch_map_data = np.zeros((batch_size, 3, 64, 64))
         for iter_index in range(iter_num):
             i = 0
             while (i+1) * batch_size <= sample_num:
-                batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
-                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
-                batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
+
+                for j in range(batch_size):
+                    batch_map_data[j, :, :, :] = np.load("../../data/demo1/minimap_%d.npy" %
+                                                         int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
 
                 batch_action_pos = np.zeros((batch_size, self.map_width * self.map_width))
                 for j in range(batch_size):
                     batch_action_pos[j, pos_index[i*batch_size+j]] = 1
 
                 feed_dict = {
-                    self.map_data: batch_map_data[:, :3, :, :],
-                    self.action_type_label: batch_action_type,
+                    self.map_data: batch_map_data,
                     self.action_pos_label: batch_action_pos,
                     self.action_pos_lr_ph: self.action_pos_lr
                 }
@@ -362,43 +368,74 @@ class ProbeNetwork(object):
         self.action_type_saver.restore(self.sess, self.action_type_model_path)
         self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
 
-        map_data = np.load("map_sample.npy")
-
-        order_data = np.load("order_sample_ap.npy")
-        action_type_data = order_data[:, 3:]
-        action_pos_data = order_data[:, [1, 2]].astype("int")
+        order_data = np.load("../../data/demo1/order.npy")
+        # order_data = np.load("mix_order_sample.npy")
+        action_pos_data = order_data[:, [2, 3]].astype("int")
+        frame_array = order_data[:, 0]
 
         pos_index = [x[1] * self.map_width + x[0] for x in action_pos_data]
 
-        sample_num = order_data.shape[0]  # 2000
-        batch_size = 100
+        sample_num = order_data.shape[0]
+        batch_size = 5
         iter_num = 1
 
+        batch_map_data = np.zeros((batch_size, 3, 64, 64))
         for iter_index in range(iter_num):
             i = 0
             while (i + 1) * batch_size <= sample_num:
-                batch_map_data = map_data[i * batch_size:(i + 1) * batch_size, :]
-                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
-                batch_action_type = action_type_data[i * batch_size:(i + 1) * batch_size, :]
+
+                for j in range(batch_size):
+                    batch_map_data[j, :, :, :] = np.load("../../data/demo1/minimap_%d.npy" %
+                                                         int(frame_array[i*batch_size + j]))[[0, 1, 5], :, :]
 
                 batch_action_pos = np.zeros((batch_size, self.map_width * self.map_width))
                 for j in range(batch_size):
                     batch_action_pos[j, pos_index[i * batch_size + j]] = 1
 
                 feed_dict = {
-                    self.map_data: batch_map_data[:, :3, :, :],
-                    self.action_type_label: batch_action_type,
+                    self.map_data: batch_map_data,
                     self.action_pos_label: batch_action_pos,
-                    self.action_pos_lr_ph: self.action_pos_lr
                 }
 
                 print("Action_Pos: epoch: %d/%d, batch_step: %d, acu: " % (iter_index + 1, iter_num, i),
                       self.action_pos_acu.eval(feed_dict, session=self.sess),
-                      # "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
-                      # "predict:", self.action_pos_predict_index.eval(feed_dict, session=self.sess)
+                      "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
+                      "predict:", self.action_pos_predict_index.eval(feed_dict, session=self.sess)
                       )
 
                 i += 1
+
+    def predict(self, map_data):
+
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        self.action_type_saver.restore(self.sess, self.action_type_model_path)
+        self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
+
+        feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
+
+        # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
+        action_type_pro = self.action_type_predict.eval(feed_dict, session=self.sess)
+        action_type = action_type_pro.argmax()
+
+        action_pos = self.action_pos_predict_index.eval(feed_dict, session=self.sess)
+
+        class WorldPos(object):
+            x = 0
+            y = 0
+
+        WorldPos.x = action_pos % self.map_width
+        WorldPos.y = action_pos // self.map_width
+
+        return action_type_pro, action_type, WorldPos
+
+    def change_action_type(self, action_type_array):
+        data = np.zeros((action_type_array.shape[0], self.action_num))
+
+        for i in range(action_type_array.shape[0]):
+            data[i, int(action_type_array[i])] = 1
+
+        return data
+
 
 
 

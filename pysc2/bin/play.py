@@ -58,13 +58,14 @@ flags.DEFINE_integer("observed_player", 1, "Which player to observe.")
 flags.DEFINE_bool("profile", False, "Whether to turn on code profiling.")
 flags.DEFINE_bool("trace", False, "Whether to trace the code execution.")
 
-flags.DEFINE_bool("save_replay", True, "Whether to save a replay at the end.")
+flags.DEFINE_bool("save_replay", False, "Whether to save a replay at the end.")
 
-flags.DEFINE_string("map", "Simple64", "Name of a map to use to play.")
+# flags.DEFINE_string("map", "CollectMineralShards", "Name of a map to use to play.")
+flags.DEFINE_string("map", None, "Name of a map to use to play.")
 
 flags.DEFINE_string("map_path", None, "Override the map for this replay.")
-flags.DEFINE_string("replay", None, "Name of a replay to show.")
-# flags.DEFINE_string("replay", "Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
+# flags.DEFINE_string("replay", None, "Name of a replay to show.")
+flags.DEFINE_string("replay", "local/Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
 
 
 def main(unused_argv):
