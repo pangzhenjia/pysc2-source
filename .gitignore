@@ -9,3 +9,6 @@ pysc2/my_agent/*.npy
 pysc2/__pycache__/
 pysc2/my_agent/new_order.txt
 pysc2/my_agent/order.txt
+/pysc2_agents/model/
+/pysc2_agents/snapshot/
+/pysc2_agents/log/

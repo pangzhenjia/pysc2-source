@@ -125,7 +125,7 @@ class SingleAgent(base_agent.BaseAgent):
                 pos = [pos_x[index], pos_y[index]]
                 timesteps = self.env.step([sc2_actions.FunctionCall(_SELECT_POINT, [_NOT_QUEUED, pos])])
 
-                for i in range(3):
+                for i in range(5):
                     self.env.step(actions=[sc2_actions.FunctionCall(_NO_OP, [])])
 
                 # single probe do some thing
