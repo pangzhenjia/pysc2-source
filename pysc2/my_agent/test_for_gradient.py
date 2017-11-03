@@ -30,5 +30,5 @@ if __name__ == "__main__":
 
     # train model
     probe_net = Network.ProbeNetwork()
-    probe_net.SL_train()
-    # probe_net.test_action_pos()
+    probe_net.initialize()
+    probe_net.save_rl_model()

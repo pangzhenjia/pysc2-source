@@ -23,10 +23,8 @@ import time
 from pysc2.agents import base_agent
 from pysc2.lib import actions as sc2_actions
 from pysc2.lib import features
-from pysc2.lib import point
-from pysc2.lib import transform
 
-
+from pysc2.my_agent.utils import get_reward
 from pysc2.my_agent.agent_network import ProbeNetwork
 
 _UNIT_TYPE = features.SCREEN_FEATURES.unit_type.index
@@ -40,7 +38,7 @@ _BUILD_FORGE = sc2_actions.FUNCTIONS.Build_Forge_screen.id
 _BUILD_CANNON = sc2_actions.FUNCTIONS.Build_PhotonCannon_screen.id
 
 _ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON]
-_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon"]
+_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon", "nothing"]
 
 _SELECT_POINT = sc2_actions.FUNCTIONS.select_point.id
 
@@ -53,22 +51,11 @@ class SingleAgent(base_agent.BaseAgent):
     def __init__(self, env):
         super(SingleAgent, self).__init__()
         self.net = ProbeNetwork()
+        self.net.restore_rl_model()
         self.env = env
 
-        game_info = env.get_controller().game_info()
-        self._map_size = point.Point.build(game_info.start_raw.map_size)
-        fl_opts = game_info.options.feature_layer
-        self._feature_layer_minimap_size = point.Point.build(fl_opts.minimap_resolution)
-        self._features = features.Features(game_info)
-
-        # define pos transform
-        self._world_to_minimap = transform.Linear(point.Point(1, -1), point.Point(0, self._map_size.y))
-        self._minimap_to_fl_minimap = transform.Linear(self._feature_layer_minimap_size / self._map_size)
-        self._world_to_fl_minimap = transform.Chain(
-            self._world_to_minimap,
-            self._minimap_to_fl_minimap,
-            transform.Floor()
-        )
+    def reset(self):
+        super(SingleAgent, self).reset()
 
     def step(self, obs):
         super(SingleAgent, self).step(obs)
@@ -76,15 +63,11 @@ class SingleAgent(base_agent.BaseAgent):
         map_data = obs.observation["minimap"][[0, 1, 5], :, :]
 
         # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon
-        action_type_pro, action_type, pos = self.net.predict(map_data)
+        action_type_pro, action_type, x, y = self.net.predict(map_data)
 
-        print("predict: ", _ACTION_TYPE_NAME[action_type], "pos_x: ", pos.x, "pos_y: ", pos.y, action_type_pro)
-        x = pos.x - 1
-        y = pos.y - 1
-        # if pos.y == 43 and action_type == 1:
-        #     return sc2_actions.FunctionCall(_NO_OP, [])
-        # if action_type == 2:
-        #     y = 43
+        print("predict: ", _ACTION_TYPE_NAME[action_type], "pos_x: ", x, "pos_y: ", y, action_type_pro)
+        # x = x - 1
+        # y = y - 1
 
         if action_type == 4:
             return sc2_actions.FunctionCall(_NO_OP, [])
@@ -98,9 +81,12 @@ class SingleAgent(base_agent.BaseAgent):
         total_frames = 0
         start_time = time.time()
 
+        self.reset()
+        if self.episodes != 1:
+            self.env.reset()
+
         action_spec = self.env.action_spec()
         observation_spec = self.env.observation_spec()
-
         self.setup(observation_spec, action_spec)
 
         try:
@@ -125,18 +111,34 @@ class SingleAgent(base_agent.BaseAgent):
                 pos = [pos_x[index], pos_y[index]]
                 timesteps = self.env.step([sc2_actions.FunctionCall(_SELECT_POINT, [_NOT_QUEUED, pos])])
 
+                # wait some time
                 for i in range(5):
                     self.env.step(actions=[sc2_actions.FunctionCall(_NO_OP, [])])
 
-                # single probe do some thing
+                # main loop
+                replay_buffer = []
                 while True:
                     total_frames += 1
                     actions = [self.step(timesteps[0])]
+                    last_timesteps = timesteps
+                    timesteps = self.env.step(actions)
+                    reward = get_reward(last_timesteps[0], timesteps[0])
+
+                    recoder = [last_timesteps[0], actions[0], timesteps[0], reward]
+                    replay_buffer.append(recoder)
+
                     if max_frames and total_frames >= max_frames:
-                        return
+                        break
                     if timesteps[0].last():
                         break
-                    timesteps = self.env.step(actions)
+
+                # some setting
+                discount = 0.99
+                learning_rate = 0.0001
+                counter = self.episodes
+
+                learning_rate = learning_rate * (1 - 0.9 * counter / max_frames)
+                self.net.update(replay_buffer, discount, learning_rate, counter)
 
         except KeyboardInterrupt:
             pass

@@ -1,8 +1,19 @@
 import tensorflow as tf
 import numpy as np
 import pysc2.my_agent.layer as layer
+from pysc2.lib import actions as sc2_actions
 import os
-os.environ['CUDA_VISIBLE_DEVICES']='3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+
+_NO_OP = sc2_actions.FUNCTIONS.no_op.id
+
+_MOVE_MINIMAP = sc2_actions.FUNCTIONS.Move_minimap.id
+_BUILD_PYLON = sc2_actions.FUNCTIONS.Build_Pylon_screen.id
+_BUILD_FORGE = sc2_actions.FUNCTIONS.Build_Forge_screen.id
+_BUILD_CANNON = sc2_actions.FUNCTIONS.Build_PhotonCannon_screen.id
+
+_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON]
+_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon"]
 
 
 class ProbeNetwork(object):
@@ -12,7 +23,7 @@ class ProbeNetwork(object):
         self.encoder_version = "basic"
         self.encoder_model_path = "model/encoder_%s/probe" % self.encoder_version
 
-        self.action_type_trainable = False
+        self.action_type_trainable = True
         self.action_type_model_path = "model/action_type/probe"
 
         self.action_pos_trainable = True
@@ -23,8 +34,10 @@ class ProbeNetwork(object):
 
         self.rl_training = True
         self.rl_model_path = "model/rl/probe"
+        self.epsilon = [0.05, 0.2]
 
         self.summary = []
+        self.summary_writer = tf.summary.FileWriter("logs/")
 
         self.map_width = 64
         self.map_num = 3
@@ -41,12 +54,13 @@ class ProbeNetwork(object):
             self._create_graph()
 
             self.sess = tf.Session(graph=self.graph)
-            self._define_saver()
+
+            # self._define_sl_saver()
+            self._define_rl_saver()
 
             # tf.summary.FileWriter("logs/", self.sess.graph)
 
-    def _define_saver(self):
-
+    def _define_sl_saver(self):
         self.encoder_var_list_save = list(set(self.encoder_var_list_train +
                                               tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder")))
         self.encoder_saver = tf.train.Saver(var_list=self.encoder_var_list_save)
@@ -58,21 +72,23 @@ class ProbeNetwork(object):
                                                  tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Action_Pos")))
         self.action_pos_saver = tf.train.Saver(var_list=self.action_pos_var_list_save)
 
-        self.rl_var_list_save = self.encoder_var_list_train + self.rl_var_list_train
-        self.rl_var_list_save.extend(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="RL_loss"))
-        self.rl_saver = tf.train.Saver(var_list=self.rl_var_list_save)
+    def _define_rl_saver(self):
+        # self.rl_var_list_save = self.encoder_var_list_train + self.rl_var_list_train
+        # self.rl_var_list_save.extend(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="RL_loss"))
+        self.rl_saver = tf.train.Saver()
 
     def initialize(self):
-        self.sess.run(tf.global_variables_initializer())
+        with self.graph.as_default() as g:
+            init_op = tf.global_variables_initializer()
+            self.sess.run(init_op)
 
     def _create_graph(self):
 
-        # define learning rate
+        # ################################# SL part  ##########################################
         self.encoder_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="encoder_lr")
         self.action_type_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="action_type_lr")
         self.action_pos_lr_ph = tf.placeholder(dtype=tf.float32, shape=[], name="action_pos_lr")
 
-        # define input
         self.map_data = tf.placeholder(dtype=tf.float32, shape=[None, self.map_num, self.map_width, self.map_width],
                                        name="input_map_data")
         self.action_type_label = tf.placeholder(dtype=tf.float32, shape=[None, self.action_num],
@@ -88,11 +104,12 @@ class ProbeNetwork(object):
         self.action_pos_predict = self._action_pos_net(self.encode_data, self.action_type_predict)
 
         # define network loss to train
-        self._define_var_list_train()
-        self._define_sl_loss()
+        self._define_sl_var_list_train()
+        # self._define_sl_loss()
 
-        # RL start
+        # ################################## RL part  ############################################
         self.value = self._value_net(self.encode_data, self.action_type_predict)
+        self.value_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Value_Net")
 
         self.value_target = tf.placeholder(tf.float32, [None], name='value_target')
         self.action_type_selected = tf.placeholder(dtype=tf.float32, shape=[None, self.action_num],
@@ -106,7 +123,7 @@ class ProbeNetwork(object):
 
         self._define_rl_loss()
 
-    def _define_var_list_train(self):
+    def _define_sl_var_list_train(self):
         # encoder
         self.encoder_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Encoder")
         self.encoder_var_list_train.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Decoder"))
@@ -116,9 +133,6 @@ class ProbeNetwork(object):
 
         # action_pos
         self.action_pos_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Action_Pos")
-
-        # value_net
-        self.value_var_list_train = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Value_Net")
 
     def _define_sl_loss(self):
         # encoder loss
@@ -277,9 +291,120 @@ class ProbeNetwork(object):
 
         return d4
 
-    def SL_train(self):
+    def predict(self, map_data):
 
-        # self.saver.restore(self.sess, self.model_path)
+        # self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        # self.action_type_saver.restore(self.sess, self.action_type_model_path)
+        # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
+
+        feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
+
+        # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
+        action_type_prob = self.action_type_predict.eval(feed_dict, session=self.sess)
+        action_type = action_type_prob.argmax()
+
+        action_pos_prob = self.action_pos_predict.eval(feed_dict, session=self.sess)
+        action_pos = action_pos_prob.argmax()
+        x = action_pos % self.map_width
+        y = action_pos // self.map_width
+
+        # Epsilon greedy exploration
+        if self.rl_training and np.random.rand() < self.epsilon[0]:
+            action_type = np.random.choice(np.arange(5))
+        if self.rl_training and np.random.rand() < self.epsilon[1]:
+            dx = np.random.randint(-4, 5)
+            dy = np.random.randint(-4, 5)
+            x = max(0, min(self.map_width - 1, x + dx))
+            y = max(0, min(self.map_width - 1, y + dy))
+
+        return action_type_prob, action_type, x, y
+
+    def update(self, rbs, disc, lr, cter):
+        # Compute R, which is value of the last observation
+        obs = rbs[2][-1]
+        if obs.last():
+            R = 0
+        else:
+            map_data = obs.observation["minimap"][[0, 1, 5], :, :]
+            feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
+            R = self.value.eval(feed_dict, session=self.sess)
+
+        sample_num = len(rbs)
+        map_data_batch = np.zeros((sample_num, self.map_num, self.map_width, self.map_width))
+
+        valid_action_pos = np.zeros(sample_num)
+        action_pos_selected = np.zeros((sample_num, self.map_width**2))
+        valid_action_type = np.ones((sample_num, self.action_num))
+        action_type_selected = np.zeros((sample_num, self.action_num))
+
+        value_target = np.zeros([len(rbs)], dtype=np.float32)
+        value_target[-1] = R
+
+        rbs.reverse()
+        for i, [obs, action, next_obs, reward] in enumerate(rbs):
+
+            # map data
+            map_data_batch[i] = obs.observation["minimap"][[0, 1, 5], :, :]
+
+            # action data
+            act_id = action.funtion
+            act_args = action.arguments
+            action_type_index = _ACTION_ARRAY.index(act_id)
+            action_type_selected[i, action_type_index] = 1
+
+            args = sc2_actions.FUNCTIONS[act_id].args
+            for arg, act_arg in zip(args, act_args):
+                if arg.name in ('screen', 'minimap', 'screen2'):
+                    pos_index = act_arg[1] * self.map_width + act_arg[0]
+                    if obs.observation["minimap"][5, act_arg[0], act_arg[1]] == 0:
+                        valid_action_pos[i] = 1
+                    action_pos_selected[i, pos_index] = 1
+
+            # value data
+            value_target[i] = reward + disc * value_target[i - 1]
+
+        feed_dict = {
+            self.map_data: map_data_batch,
+            self.value_target: value_target,
+            self.valid_action_type: valid_action_type,
+            self.action_type_selected: action_type_selected,
+            self.valid_action_pos: valid_action_pos,
+            self.action_pos_selected: action_pos_selected,
+            self.rl_lr_ph: lr
+        }
+
+        self.RL_update_encoder(map_data_batch)
+        _, summary = self.sess.run([self.rl_train_step, self.summary_op], feed_dict)
+        self.summary_writer.add_summary(summary, cter)
+
+    def RL_update_encoder(self, map_data):
+        map_num = map_data.shape[0]
+
+        batch_size = 20
+        iter_num = 5
+
+        for iter_index in range(iter_num):
+            i = 0
+            while (i + 1) * batch_size <= map_num:
+                batch_map_data = map_data[i * batch_size:(i + 1) * batch_size, :]
+                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+
+                feed_dict = {
+                    self.map_data: batch_map_data[:, :3, :, :],
+                    self.encoder_lr_ph: self.encoder_lr
+                }
+                self.encoder_train_step.run(feed_dict, session=self.sess)
+
+                print("Encoder: epoch: %d/%d, batch_step: %d, loss: " % (iter_index, iter_num, i),
+                      self.encoder_loss.eval(feed_dict, session=self.sess))
+
+                i += 1
+
+                # if i % 50 == 0:
+                #     self.encoder_saver.save(self.sess, self.encoder_model_path)
+                #     print("Model have been save!")
+
+    def SL_train(self):
 
         self.encoder_saver.restore(self.sess, self.encoder_model_path)
         # self.SL_train_encoder()
@@ -287,7 +412,7 @@ class ProbeNetwork(object):
         self.action_type_saver.restore(self.sess, self.action_type_model_path)
         # self.SL_train_action_type()
 
-        self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
+        # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
         self.SL_train_action_pos()
 
     def SL_train_encoder(self):
@@ -393,9 +518,6 @@ class ProbeNetwork(object):
                 }
 
                 self.action_pos_train_step.run(feed_dict, session=self.sess)
-
-                print(self.sess.run(tf.gradients(self.action_pos_loss, self.action_pos_var_list_train), feed_dict))
-
                 print("Action_Pos: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, i),
                       self.action_pos_loss.eval(feed_dict, session=self.sess),
                       # "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
@@ -416,6 +538,16 @@ class ProbeNetwork(object):
 
     def restore_action_pos(self):
         self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
+
+    def restore_rl_model(self):
+        self.rl_saver.restore(self.sess, self.rl_model_path)
+
+    def save_rl_model(self):
+        # self.restore_encoder()
+        # self.restore_action_pos()
+        # self.restore_action_type()
+
+        self.rl_saver.save(self.sess, self.rl_model_path)
 
     def print_decode_data(self):
         self.encoder_saver.restore(self.sess, self.encoder_model_path)
@@ -516,29 +648,6 @@ class ProbeNetwork(object):
                       )
 
                 i += 1
-
-    def predict(self, map_data):
-
-        self.encoder_saver.restore(self.sess, self.encoder_model_path)
-        self.action_type_saver.restore(self.sess, self.action_type_model_path)
-        self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
-
-        feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
-
-        # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
-        action_type_pro = self.action_type_predict.eval(feed_dict, session=self.sess)
-        action_type = action_type_pro.argmax()
-
-        action_pos = self.action_pos_predict_index.eval(feed_dict, session=self.sess)
-
-        class WorldPos(object):
-            x = 0
-            y = 0
-
-        WorldPos.x = action_pos % self.map_width
-        WorldPos.y = action_pos // self.map_width
-
-        return action_type_pro, action_type, WorldPos
 
     def change_action_type(self, action_type_array):
         data = np.zeros((action_type_array.shape[0], self.action_num))
