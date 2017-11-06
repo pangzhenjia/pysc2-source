@@ -12,8 +12,8 @@ _BUILD_PYLON = sc2_actions.FUNCTIONS.Build_Pylon_screen.id
 _BUILD_FORGE = sc2_actions.FUNCTIONS.Build_Forge_screen.id
 _BUILD_CANNON = sc2_actions.FUNCTIONS.Build_PhotonCannon_screen.id
 
-_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON]
-_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon"]
+_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON, 0]
+_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon", "nothing"]
 
 
 class ProbeNetwork(object):
@@ -23,16 +23,18 @@ class ProbeNetwork(object):
         self.encoder_version = "basic"
         self.encoder_model_path = "model/encoder_%s/probe" % self.encoder_version
 
-        self.action_type_trainable = True
+        self.action_type_trainable = False
         self.action_type_model_path = "model/action_type/probe"
 
-        self.action_pos_trainable = True
+        self.action_pos_trainable = False
         self.action_pos_model_path = "model/action_pos/probe"
 
         self.value_trainable = True
         self.value_model_path = "model/value_net/probe"
 
+        self.sl_training = True
         self.rl_training = True
+
         self.rl_model_path = "model/rl/probe"
         self.epsilon = [0.05, 0.2]
 
@@ -45,7 +47,7 @@ class ProbeNetwork(object):
 
         self.encoder_lr = 0.00001
         self.action_type_lr = 0.00001
-        self.action_pos_lr = 0.000001
+        self.action_pos_lr = 0.00001
 
         self.flatten_map_size = self.map_width * self.map_width * self.map_num
 
@@ -55,8 +57,10 @@ class ProbeNetwork(object):
 
             self.sess = tf.Session(graph=self.graph)
 
-            # self._define_sl_saver()
-            self._define_rl_saver()
+            if self.sl_training:
+                self._define_sl_saver()
+            if self.rl_training:
+                self._define_rl_saver()
 
             # tf.summary.FileWriter("logs/", self.sess.graph)
 
@@ -105,7 +109,8 @@ class ProbeNetwork(object):
 
         # define network loss to train
         self._define_sl_var_list_train()
-        # self._define_sl_loss()
+        if self.sl_training:
+            self._define_sl_loss()
 
         # ################################## RL part  ############################################
         self.value = self._value_net(self.encode_data, self.action_type_predict)
@@ -121,7 +126,8 @@ class ProbeNetwork(object):
 
         self.rl_lr_ph = tf.placeholder(tf.float32, None, name='rl_learning_rate')
 
-        self._define_rl_loss()
+        if self.rl_training:
+            self._define_rl_loss()
 
     def _define_sl_var_list_train(self):
         # encoder
@@ -293,10 +299,6 @@ class ProbeNetwork(object):
 
     def predict(self, map_data):
 
-        # self.encoder_saver.restore(self.sess, self.encoder_model_path)
-        # self.action_type_saver.restore(self.sess, self.action_type_model_path)
-        # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
-
         feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
 
         # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
@@ -321,7 +323,7 @@ class ProbeNetwork(object):
 
     def update(self, rbs, disc, lr, cter):
         # Compute R, which is value of the last observation
-        obs = rbs[2][-1]
+        obs = rbs[-1][2]
         if obs.last():
             R = 0
         else:
@@ -347,7 +349,7 @@ class ProbeNetwork(object):
             map_data_batch[i] = obs.observation["minimap"][[0, 1, 5], :, :]
 
             # action data
-            act_id = action.funtion
+            act_id = action.function
             act_args = action.arguments
             action_type_index = _ACTION_ARRAY.index(act_id)
             action_type_selected[i, action_type_index] = 1
@@ -380,17 +382,16 @@ class ProbeNetwork(object):
     def RL_update_encoder(self, map_data):
         map_num = map_data.shape[0]
 
-        batch_size = 20
-        iter_num = 5
+        batch_size = 10
+        iter_num = 2
 
         for iter_index in range(iter_num):
             i = 0
             while (i + 1) * batch_size <= map_num:
-                batch_map_data = map_data[i * batch_size:(i + 1) * batch_size, :]
-                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+                batch_map_data = map_data[i * batch_size:(i + 1) * batch_size]
 
                 feed_dict = {
-                    self.map_data: batch_map_data[:, :3, :, :],
+                    self.map_data: batch_map_data,
                     self.encoder_lr_ph: self.encoder_lr
                 }
                 self.encoder_train_step.run(feed_dict, session=self.sess)
@@ -406,14 +407,17 @@ class ProbeNetwork(object):
 
     def SL_train(self):
 
-        self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        self.restore_rl_model()
+
+        # self.encoder_saver.restore(self.sess, self.encoder_model_path)
         # self.SL_train_encoder()
 
-        self.action_type_saver.restore(self.sess, self.action_type_model_path)
-        # self.SL_train_action_type()
+        # self.action_type_saver.restore(self.sess, self.action_type_model_path)
+        self.SL_train_action_type()
 
         # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
-        self.SL_train_action_pos()
+
+        # self.SL_train_action_pos()
 
     def SL_train_encoder(self):
 

@@ -37,7 +37,7 @@ _BUILD_PYLON = sc2_actions.FUNCTIONS.Build_Pylon_screen.id
 _BUILD_FORGE = sc2_actions.FUNCTIONS.Build_Forge_screen.id
 _BUILD_CANNON = sc2_actions.FUNCTIONS.Build_PhotonCannon_screen.id
 
-_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON]
+_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON, 0]
 _ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon", "nothing"]
 
 _SELECT_POINT = sc2_actions.FUNCTIONS.select_point.id
@@ -78,12 +78,7 @@ class SingleAgent(base_agent.BaseAgent):
             return sc2_actions.FunctionCall(_NO_OP, [])
 
     def play(self, max_frames=0):
-        total_frames = 0
         start_time = time.time()
-
-        self.reset()
-        if self.episodes != 1:
-            self.env.reset()
 
         action_spec = self.env.action_spec()
         observation_spec = self.env.observation_spec()
@@ -91,6 +86,10 @@ class SingleAgent(base_agent.BaseAgent):
 
         try:
             while True:
+
+                self.reset()
+                if self.episodes != 1:
+                    self.env.reset()
 
                 # while loop to check start point
                 while True:
@@ -100,8 +99,6 @@ class SingleAgent(base_agent.BaseAgent):
                         self.env.reset()
                     else:
                         break
-
-                self.reset()
 
                 # random select a probe
                 unit_type_map = timesteps[0].observation["screen"][_UNIT_TYPE]
@@ -117,6 +114,7 @@ class SingleAgent(base_agent.BaseAgent):
 
                 # main loop
                 replay_buffer = []
+                total_frames = 0
                 while True:
                     total_frames += 1
                     actions = [self.step(timesteps[0])]

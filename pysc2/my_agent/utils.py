@@ -31,7 +31,7 @@ def get_reward(last_obs, now_obs):
     #         cannon: 10 point
 
     if now_obs.last():
-        return 100
+        return -10
 
     last_obs_point = get_relative_point(last_obs)
     now_obs_point = get_relative_point(now_obs)

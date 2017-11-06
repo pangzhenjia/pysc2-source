@@ -39,10 +39,10 @@ flags.DEFINE_integer("step_mul", 8, "Game steps per agent step.")
 
 flags.DEFINE_string("agent", "pysc2_agents.agents.a3c_agent.A3CAgent", "Which agent to run.")
 flags.DEFINE_string("net", "fcn", "atari or fcn.")
-flags.DEFINE_enum("agent_race", None, sc2_env.races.keys(), "Agent's race.")
-flags.DEFINE_enum("bot_race", None, sc2_env.races.keys(), "Bot's race.")
+flags.DEFINE_enum("agent_race", "P", sc2_env.races.keys(), "Agent's race.")
+flags.DEFINE_enum("bot_race", "T", sc2_env.races.keys(), "Bot's race.")
 flags.DEFINE_enum("difficulty", None, sc2_env.difficulties.keys(), "Bot's strength.")
-flags.DEFINE_integer("max_agent_steps", 1000, "Total agent steps.")
+flags.DEFINE_integer("max_agent_steps", 100, "Total agent steps.")
 
 flags.DEFINE_bool("profile", False, "Whether to turn on code profiling.")
 flags.DEFINE_bool("trace", False, "Whether to trace the code execution.")

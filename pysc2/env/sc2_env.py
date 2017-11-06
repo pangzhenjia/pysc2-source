@@ -227,8 +227,8 @@ class SC2Env(environment.Base):
             return self.reset()
 
         assert len(actions) == 1  # No multiplayer yet.
-        # action = self._features.transform_action(self._obs.observation, actions[0])
-        # print(self._controller.act(action))
+        action = self._features.transform_action(self._obs.observation, actions[0])
+        self._controller.act(action)
         self._state = environment.StepType.MID
         return self._step()
 
