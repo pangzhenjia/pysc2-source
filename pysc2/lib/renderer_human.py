@@ -942,10 +942,10 @@ class RendererHuman(object):
                     # obs_process.save("C:/Users/chensy/Desktop/sc2 project/data/demo1",
                     #                  obs_data, obs.observation.game_loop)
 
-                    if obs.actions:
-                        if obs.actions[0].action_feature_layer.HasField("unit_command"):
-                            self.draw_actions()
-                            print(1)
+                    # if obs.actions:
+                    #     if obs.actions[0].action_feature_layer.HasField("unit_command"):
+                    #         self.draw_actions()
+                    #         print(1)
 
                     if obs.player_result:
                         break

@@ -38,7 +38,7 @@ flags.DEFINE_bool("realtime", False, "Whether to run in realtime mode.")
 flags.DEFINE_bool("full_screen", False, "Whether to run full screen.")
 
 flags.DEFINE_float("fps", 22.4, "Frames per second to run the game.")
-flags.DEFINE_integer("step_mul", 8, "Game steps per observation.")
+flags.DEFINE_integer("step_mul", 1, "Game steps per observation.")
 flags.DEFINE_bool("render_sync", False, "Turn on sync rendering.")
 flags.DEFINE_integer("screen_resolution", 84,
                      "Resolution for screen feature layers.")
@@ -58,14 +58,14 @@ flags.DEFINE_integer("observed_player", 1, "Which player to observe.")
 flags.DEFINE_bool("profile", False, "Whether to turn on code profiling.")
 flags.DEFINE_bool("trace", False, "Whether to trace the code execution.")
 
-flags.DEFINE_bool("save_replay", False, "Whether to save a replay at the end.")
+flags.DEFINE_bool("save_replay", True, "Whether to save a replay at the end.")
 
-# flags.DEFINE_string("map", "CollectMineralShards", "Name of a map to use to play.")
-flags.DEFINE_string("map", None, "Name of a map to use to play.")
+flags.DEFINE_string("map", "Simple64", "Name of a map to use to play.")
+# flags.DEFINE_string("map", None, "Name of a map to use to play.")
 
 flags.DEFINE_string("map_path", None, "Override the map for this replay.")
-# flags.DEFINE_string("replay", None, "Name of a replay to show.")
-flags.DEFINE_string("replay", "local/Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
+flags.DEFINE_string("replay", None, "Name of a replay to show.")
+# flags.DEFINE_string("replay", "local/Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
 
 
 def main(unused_argv):
@@ -165,7 +165,7 @@ def main(unused_argv):
                 pass
             print("Score: ", obs.observation.score.score)
             print("Result: ", obs.player_result)
-            if FLAGS.map and FLAGS.save_replay:
+            if FLAGS.map and FLAGS.save_replay and obs.player_result:
                 replay_save_loc = run_config.save_replay(
                     controller.save_replay(), "local", FLAGS.map)
                 print("Replay saved to:", replay_save_loc)

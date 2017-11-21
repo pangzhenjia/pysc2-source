@@ -50,10 +50,10 @@ flags.DEFINE_integer("max_episode_steps", 0, "Total game steps per episode.")
 flags.DEFINE_bool("disable_fog", False, "Disable fog of war.")
 flags.DEFINE_integer("observed_player", 1, "Which player to observe.")
 
-flags.DEFINE_string("replay", "local/Simple64_2017-09-26-11-10-21.SC2Replay", "Name of a replay to show.")
+flags.DEFINE_string("replay", "local/Simple64_2017-11-06-08-45-45           .SC2Replay", "Name of a replay to show.")
 
-flags.DEFINE_bool("save_data", False, "save data or not")
-flags.DEFINE_string("save_path", "C:/Users/chensy/Desktop/pysc2 source/data/demo1/", "path to save replay data")
+flags.DEFINE_bool("save_data", True, "save data or not")
+flags.DEFINE_string("save_path", "C:/Users/chensy/Desktop/pysc2 source/data/demo6/", "path to save replay data")
 
 
 def main(unused_argv):
@@ -159,11 +159,11 @@ def main(unused_argv):
                         order_data = np.append(order_data, order_temp)
 
         # just for check
-        controller.step(FLAGS.step_mul)
-        obs = controller.observe()
-        if not obs.player_result:
-            raise Exception("Unexpected game ending! Current frame: %d, End frame: %d"
-                            % (obs.observation.game_loop, frame_num))
+        # controller.step(FLAGS.step_mul)
+        # obs = controller.observe()
+        # if not obs.player_result:
+        #     raise Exception("Unexpected game ending! Current frame: %d, End frame: %d"
+        #                     % (obs.observation.game_loop, frame_num))
 
         print("Score: ", obs.observation.score.score)
         print("Result: ", obs.player_result)

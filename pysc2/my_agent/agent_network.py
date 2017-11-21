@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import pysc2.my_agent.layer as layer
+from pysc2.my_agent.utils import get_power_index
 from pysc2.lib import actions as sc2_actions
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '3'
@@ -12,8 +13,9 @@ _BUILD_PYLON = sc2_actions.FUNCTIONS.Build_Pylon_screen.id
 _BUILD_FORGE = sc2_actions.FUNCTIONS.Build_Forge_screen.id
 _BUILD_CANNON = sc2_actions.FUNCTIONS.Build_PhotonCannon_screen.id
 
-_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON, 0]
-_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon", "nothing"]
+
+_ACTION_ARRAY = [_MOVE_MINIMAP, _BUILD_PYLON, _BUILD_FORGE, _BUILD_CANNON]
+_ACTION_TYPE_NAME = ["move", "build_pylon", "build_forge", "build_cannon"]
 
 
 class ProbeNetwork(object):
@@ -36,14 +38,14 @@ class ProbeNetwork(object):
         self.rl_training = True
 
         self.rl_model_path = "model/rl/probe"
-        self.epsilon = [0.05, 0.2]
+        self.epsilon = [0.2, 0.2]
 
         self.summary = []
         self.summary_writer = tf.summary.FileWriter("logs/")
 
         self.map_width = 64
         self.map_num = 3
-        self.action_num = 5
+        self.action_num = 4
 
         self.encoder_lr = 0.00001
         self.action_type_lr = 0.00001
@@ -66,7 +68,8 @@ class ProbeNetwork(object):
 
     def _define_sl_saver(self):
         self.encoder_var_list_save = list(set(self.encoder_var_list_train +
-                                              tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder")))
+                                              tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Encoder") +
+                                              tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Decoder")))
         self.encoder_saver = tf.train.Saver(var_list=self.encoder_var_list_save)
 
         self.action_type_var_list_save = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="Action_Type")
@@ -297,22 +300,36 @@ class ProbeNetwork(object):
 
         return d4
 
-    def predict(self, map_data):
+    def predict(self, obs):
+
+        map_data = obs.observation["minimap"][[0, 1, 5], :, :]
 
         feed_dict = {self.map_data: map_data.reshape(-1, self.map_num, self.map_width, self.map_width)}
 
-        # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
+        # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon
         action_type_prob = self.action_type_predict.eval(feed_dict, session=self.sess)
         action_type = action_type_prob.argmax()
 
-        action_pos_prob = self.action_pos_predict.eval(feed_dict, session=self.sess)
-        action_pos = action_pos_prob.argmax()
+        action_pos_prob = self.action_pos_predict.eval(feed_dict, session=self.sess).reshape(-1)
+
+        # get the valid pos for building forge and cannon
+        if action_type > 1:
+            index_list = get_power_index(obs)
+            if np.sum(index_list) > 1:
+                new_action_pos_prob = np.zeros(action_pos_prob.shape)
+                new_action_pos_prob[index_list] = action_pos_prob[index_list]
+                action_pos = new_action_pos_prob.argmax()
+            else:
+                action_pos = action_pos_prob.argmax()
+        else:
+            action_pos = action_pos_prob.argmax()
+
         x = action_pos % self.map_width
         y = action_pos // self.map_width
 
         # Epsilon greedy exploration
         if self.rl_training and np.random.rand() < self.epsilon[0]:
-            action_type = np.random.choice(np.arange(5))
+            action_type = np.random.choice(np.arange(self.action_num))
         if self.rl_training and np.random.rand() < self.epsilon[1]:
             dx = np.random.randint(-4, 5)
             dy = np.random.randint(-4, 5)
@@ -323,6 +340,9 @@ class ProbeNetwork(object):
 
     def update(self, rbs, disc, lr, cter):
         # Compute R, which is value of the last observation
+        if not self.rl_training:
+            return
+
         obs = rbs[-1][2]
         if obs.last():
             R = 0
@@ -375,15 +395,15 @@ class ProbeNetwork(object):
             self.rl_lr_ph: lr
         }
 
-        self.RL_update_encoder(map_data_batch)
+        # self.RL_update_encoder(map_data_batch)
         _, summary = self.sess.run([self.rl_train_step, self.summary_op], feed_dict)
         self.summary_writer.add_summary(summary, cter)
 
     def RL_update_encoder(self, map_data):
         map_num = map_data.shape[0]
 
-        batch_size = 10
-        iter_num = 2
+        batch_size = 20
+        iter_num = 1
 
         for iter_index in range(iter_num):
             i = 0
@@ -407,132 +427,156 @@ class ProbeNetwork(object):
 
     def SL_train(self):
 
-        self.restore_rl_model()
+        # self.restore_rl_model()
 
-        # self.encoder_saver.restore(self.sess, self.encoder_model_path)
+        self.encoder_saver.restore(self.sess, self.encoder_model_path)
         # self.SL_train_encoder()
 
-        # self.action_type_saver.restore(self.sess, self.action_type_model_path)
-        self.SL_train_action_type()
+        self.action_type_saver.restore(self.sess, self.action_type_model_path)
+        # self.SL_train_action_type()
 
         # self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
-
-        # self.SL_train_action_pos()
+        self.SL_train_action_pos()
 
     def SL_train_encoder(self):
 
-        map_data = np.load("map_sample.npy")
-        map_num = map_data.shape[0]
+        frame_num = 4500
+        frame_array = np.arange(2, frame_num+2, 2)
 
-        batch_size = 20
+        file_num = 6
+
+        batch_size = 50
         iter_num = 5
 
+        batch_map_data = np.zeros((batch_size, 3, 64, 64))
+        count = 0
         for iter_index in range(iter_num):
-            i = 0
-            while (i+1) * batch_size <= map_num:
-                batch_map_data = map_data[i*batch_size:(i+1)*batch_size, :]
-                batch_map_data = batch_map_data.reshape(batch_size, 4, self.map_width, self.map_width)
+            batch_step = 0
+            for file_index in [2, 3, 4, 5, 6]:
 
-                feed_dict = {
-                    self.map_data: batch_map_data[:, :3, :, :],
-                    self.encoder_lr_ph: self.encoder_lr
-                }
-                self.encoder_train_step.run(feed_dict, session=self.sess)
+                i = 0
+                while (i+1) * batch_size <= frame_num / 2:
 
-                print("Encoder: epoch: %d/%d, batch_step: %d, loss: " % (iter_index, iter_num, i),
-                      self.encoder_loss.eval(feed_dict, session=self.sess))
+                    for j in range(batch_size):
+                        batch_map_data[j, :, :, :] = np.load("../../data/demo%d/minimap_%d.npy" %
+                                                             (file_index, int(frame_array[i * batch_size + j])))[[0, 1, 5], :, :]
 
-                i += 1
+                    feed_dict = {
+                        self.map_data: batch_map_data,
+                        self.encoder_lr_ph: self.encoder_lr
+                    }
+                    self.encoder_train_step.run(feed_dict, session=self.sess)
 
-                if i % 50 == 0:
-                    self.encoder_saver.save(self.sess, self.encoder_model_path)
-                    print("Model have been save!")
+                    print("Encoder: epoch: %d/%d, batch_step: %d, loss: " % (iter_index, iter_num, batch_step),
+                          self.encoder_loss.eval(feed_dict, session=self.sess))
+
+                    i += 1
+                    count += 1
+                    batch_step += 1
+
+                    if count % 50 == 0:
+                        self.encoder_saver.save(self.sess, self.encoder_model_path)
+                        print("Model have been save!")
 
     def SL_train_action_type(self):
 
-        order_data = np.load("new_order_sample.npy")
-        action_type_data = self.change_action_type(order_data[:, 1])
-
-        frame_array = order_data[:, 0]
-
-        sample_num = order_data.shape[0]  # 5000
-        batch_size = 20
+        sample_num = 2000
+        batch_size = 100
         iter_num = 20
 
         batch_map_data = np.zeros((batch_size, 3, 64, 64))
+        count = 0
         for iter_index in range(iter_num):
-            i = 0
-            while (i+1) * batch_size <= sample_num:
+            batch_step = 0
+            for file_index in [1, 2, 3, 4, 5, 6]:
 
-                for j in range(batch_size):
-                    batch_map_data[j, :, :, :] = np.load("../../data/demo1/minimap_%d.npy" %
-                                                         int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
+                order_data = np.load("data/new_order_sample_%d.npy" % file_index)
+                action_type_data = self.change_action_type(order_data[:, 1])
 
-                batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
+                frame_array = order_data[:, 0]
 
-                feed_dict = {
-                    self.map_data: batch_map_data[:, :3, :, :],
-                    self.action_type_label: batch_action_type,
-                    self.action_type_lr_ph: self.action_type_lr
-                }
+                i = 0
+                while (i+1) * batch_size <= sample_num:
 
-                self.action_type_train_step.run(feed_dict, session=self.sess)
+                    for j in range(batch_size):
+                        batch_map_data[j, :, :, :] = \
+                            np.load("C:/Users/chensy/Desktop/pysc2 source/data/demo1/minimap_%d.npy" %
+                                    int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
 
-                print("Action_Type: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, i),
-                      self.action_type_loss.eval(feed_dict, session=self.sess),
-                      # "predict: ", self.action_type_predict.eval(feed_dict, session=self.sess)[-1, :],
-                      # "label: ", batch_action_type[-1, :]
-                      )
+                    batch_action_type = action_type_data[i*batch_size:(i+1)*batch_size, :]
 
-                i += 1
+                    feed_dict = {
+                        self.map_data: batch_map_data,
+                        self.action_type_label: batch_action_type,
+                        self.action_type_lr_ph: self.action_type_lr
+                    }
 
-                if i % 50 == 0:
-                    self.action_type_saver.save(self.sess, self.action_type_model_path)
-                    print("Model have been save!")
+                    self.action_type_train_step.run(feed_dict, session=self.sess)
+
+                    print("Action_Type: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, batch_step),
+                          self.action_type_loss.eval(feed_dict, session=self.sess),
+                          # "predict: ", self.action_type_predict.eval(feed_dict, session=self.sess)[-1, :],
+                          # "label: ", batch_action_type[-1, :]
+                          )
+
+                    i += 1
+                    count += 1
+                    batch_step += 1
+
+                    if count % 50 == 0:
+                        self.action_type_saver.save(self.sess, self.action_type_model_path)
+                        print("Model have been save!")
 
     def SL_train_action_pos(self):
 
-        order_data = np.load("new_order_sample.npy")
-        action_pos_data = order_data[:, [2, 3]].astype("int")
-        frame_array = order_data[:, 0]
-
-        pos_index = [x[1]*self.map_width+x[0] for x in action_pos_data]
-
-        sample_num = order_data.shape[0]  # 5000
-        batch_size = 20
+        sample_num = 2000
+        batch_size = 100
         iter_num = 20
 
         batch_map_data = np.zeros((batch_size, 3, 64, 64))
+        count = 0
         for iter_index in range(iter_num):
-            i = 0
-            while (i+1) * batch_size <= sample_num:
+            batch_step = 0
+            for file_index in [1, 2, 3, 4, 5, 6]:
 
-                for j in range(batch_size):
-                    batch_map_data[j, :, :, :] = np.load("../../data/demo1/minimap_%d.npy" %
-                                                         int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
+                order_data = np.load("data/new_order_sample_%d.npy" % file_index)
+                action_pos_data = order_data[:, [2, 3]].astype("int")
+                frame_array = order_data[:, 0]
 
-                batch_action_pos = np.zeros((batch_size, self.map_width * self.map_width))
-                for j in range(batch_size):
-                    batch_action_pos[j, pos_index[i*batch_size+j]] = 1
+                pos_index = [x[1] * self.map_width + x[0] for x in action_pos_data]
 
-                feed_dict = {
-                    self.map_data: batch_map_data,
-                    self.action_pos_label: batch_action_pos,
-                    self.action_pos_lr_ph: self.action_pos_lr
-                }
+                i = 0
+                while (i+1) * batch_size <= sample_num:
 
-                self.action_pos_train_step.run(feed_dict, session=self.sess)
-                print("Action_Pos: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, i),
-                      self.action_pos_loss.eval(feed_dict, session=self.sess),
-                      # "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
-                      # "predict:", self.action_pos_predict_index.eval(feed_dict, session=self.sess)
-                      )
+                    for j in range(batch_size):
+                        batch_map_data[j, :, :, :] = \
+                            np.load("C:/Users/chensy/Desktop/pysc2 source/data/demo1/minimap_%d.npy" %
+                                    int(frame_array[i * batch_size + j]))[[0, 1, 5], :, :]
 
-                i += 1
+                    batch_action_pos = np.zeros((batch_size, self.map_width * self.map_width))
+                    for j in range(batch_size):
+                        batch_action_pos[j, pos_index[i*batch_size+j]] = 1
 
-                if i % 50 == 0:
-                    self.action_pos_saver.save(self.sess, self.action_pos_model_path)
-                    print("Model have been save!")
+                    feed_dict = {
+                        self.map_data: batch_map_data,
+                        self.action_pos_label: batch_action_pos,
+                        self.action_pos_lr_ph: self.action_pos_lr
+                    }
+
+                    self.action_pos_train_step.run(feed_dict, session=self.sess)
+                    print("Action_Pos: epoch: %d/%d, batch_step: %d, loss: " % (iter_index+1, iter_num, batch_step),
+                          self.action_pos_loss.eval(feed_dict, session=self.sess),
+                          # "label:", self.action_pos_label_index.eval(feed_dict, session=self.sess),
+                          # "predict:", self.action_pos_predict_index.eval(feed_dict, session=self.sess)
+                          )
+
+                    i += 1
+                    count += 1
+                    batch_step += 1
+
+                    if count % 50 == 0:
+                        self.action_pos_saver.save(self.sess, self.action_pos_model_path)
+                        print("Model have been save!")
 
     def restore_encoder(self):
         self.encoder_saver.restore(self.sess, self.encoder_model_path)
@@ -543,14 +587,15 @@ class ProbeNetwork(object):
     def restore_action_pos(self):
         self.action_pos_saver.restore(self.sess, self.action_pos_model_path)
 
+    def restore_sl_model(self):
+        self.restore_encoder()
+        self.restore_action_type()
+        self.restore_action_pos()
+
     def restore_rl_model(self):
         self.rl_saver.restore(self.sess, self.rl_model_path)
 
     def save_rl_model(self):
-        # self.restore_encoder()
-        # self.restore_action_pos()
-        # self.restore_action_type()
-
         self.rl_saver.save(self.sess, self.rl_model_path)
 
     def print_decode_data(self):

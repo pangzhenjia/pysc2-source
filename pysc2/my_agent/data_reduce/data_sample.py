@@ -9,7 +9,7 @@ if __name__ == "__main__":
     orders = np.loadtxt("new_order.txt")
     label = orders[:, 1]
 
-    # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon, 4: nothing
+    # action_type: 0 : move, 1 : build_pylon, 2 : build_forge, 3: build_cannon
     type_num = 5
     label_index = []
     for i in range(type_num):

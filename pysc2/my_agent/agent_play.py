@@ -27,9 +27,7 @@ from pysc2 import maps
 from pysc2.env import available_actions_printer
 from pysc2.env import run_loop
 from pysc2.env import sc2_env
-from pysc2.lib import stopwatch
 
-from pysc2.lib import app
 import gflags as flags
 
 import pysc2.my_agent.single_agent as single_agent
@@ -37,12 +35,12 @@ import sys
 
 FLAGS = flags.FLAGS
 flags.DEFINE_bool("render", True, "Whether to render with pygame.")
-flags.DEFINE_integer("screen_resolution", 84,
+flags.DEFINE_integer("screen_resolution", 64,
                      "Resolution for screen feature layers.")
 flags.DEFINE_integer("minimap_resolution", 64,
                      "Resolution for minimap feature layers.")
 
-flags.DEFINE_integer("max_agent_steps", 100, "Total agent steps.")
+flags.DEFINE_integer("max_agent_steps", 600, "Total agent steps.")
 flags.DEFINE_integer("game_steps_per_episode", 0, "Game steps per episode.")
 flags.DEFINE_integer("step_mul", 24, "Game steps per agent step.")
 
@@ -72,6 +70,7 @@ def main():
             bot_race=FLAGS.bot_race,
             difficulty=FLAGS.difficulty,
             step_mul=FLAGS.step_mul,
+            score_index=-1,
             game_steps_per_episode=FLAGS.game_steps_per_episode,
             screen_size_px=(FLAGS.screen_resolution, FLAGS.screen_resolution),
             minimap_size_px=(FLAGS.minimap_resolution, FLAGS.minimap_resolution),
